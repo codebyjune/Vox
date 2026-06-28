@@ -3,12 +3,17 @@
 export const API_URL =
   (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8080";
 
-// Where AudioWorklet + (optional) WASM model files are served from.
-export const WORKLET_URL = new URL("./worklets/denoise-processor.js", import.meta.url).href;
+// Files under client/public/ are served at the app root in both dev and prod.
+// Use BASE_URL (always "/", or whatever you set as `base` in vite.config) so
+// the path resolves correctly regardless of where this module lives.
+const PUB = import.meta.env.BASE_URL;
+
+// Where the AudioWorklet processor is served from.
+export const WORKLET_URL = `${PUB}worklets/denoise-processor.js`;
 
 // WASM model URLs (drop the files into client/public/wasm to enable AI mode).
 export const WASM_MODELS: Record<string, string> = {
-  rnnoise: new URL("./wasm/rnnoise.wasm", import.meta.url).href,
-  dtln: new URL("./wasm/dtln.wasm", import.meta.url).href,
-  deepfilter: new URL("./wasm/deepfilter.wasm", import.meta.url).href,
+  rnnoise: `${PUB}wasm/rnnoise.wasm`,
+  dtln: `${PUB}wasm/dtln.wasm`,
+  deepfilter: `${PUB}wasm/deepfilter.wasm`,
 };

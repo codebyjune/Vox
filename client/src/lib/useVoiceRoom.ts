@@ -171,7 +171,7 @@ export function useVoiceRoom(): VoiceRoom {
 
   // Rebuild pipeline + republish when denoise settings change mid-call.
   const applyDenoise = useCallback(
-    (settings: DenoiseSettings) => {
+    (settings: DenoiseSettings): Promise<void> => {
       const job = (async () => {
         // Chain after any in-flight rebuild.
         await rebuildingRef.current;
@@ -202,11 +202,21 @@ export function useVoiceRoom(): VoiceRoom {
         if (wasMuted) await room.localParticipant.setMicrophoneEnabled(false);
         refreshParticipants();
       })();
-      // Swallow errors here; voice.error is set by join()'s own catch. Avoid
-      // leaving the chain broken: this promise is stored so subsequent calls
-      // await it.
-      rebuildingRef.current = job.catch(() => {});
-      return job;
+
+      // Handle failures here: the old mic is already unpublished by this point,
+      // so we must surface the error (not leave the user silently muted) and
+      // keep the rebuild chain intact for subsequent calls. Returning the caught
+      // promise means callers using `void` never get an unhandled rejection.
+      const safe = job.catch((e) => {
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(`mic rebuild failed: ${msg}`);
+        pipelineRef.current?.stop();
+        pipelineRef.current = null;
+        localPubRef.current = null;
+        refreshParticipants();
+      });
+      rebuildingRef.current = safe;
+      return safe;
     },
     [connected, refreshParticipants],
   );
