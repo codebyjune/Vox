@@ -38,6 +38,16 @@ export class MicPipeline {
   async getMicTrack(): Promise<MediaStreamTrack> {
     this.stop();
 
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error(
+        "Microphone access unavailable. " +
+          "Ensure the app runs in a secure context (localhost / HTTPS). " +
+          "In a Tauri macOS build, the app also needs the " +
+          "com.apple.security.device.audio-input entitlement and " +
+          "NSMicrophoneUsageDescription in Info.plist.",
+      );
+    }
+
     this.rawStream = await navigator.mediaDevices.getUserMedia({
       video: false,
       audio: this.audioConstraintsFor(this.settings),

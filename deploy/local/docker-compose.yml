@@ -14,7 +14,7 @@
 services:
   livekit:
     image: livekit/livekit-server:v1.13.2
-    command: --config /etc/livekit.yaml --udp-port 50000-50020
+    command: --config /etc/livekit.yaml --udp-port 50000-50020 --node-ip 127.0.0.1
     restart: unless-stopped
     ports:
       - "7880:7880"                       # signaling (ws)

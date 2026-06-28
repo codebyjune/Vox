@@ -8,10 +8,11 @@ export default defineConfig({
   server: {
     port: 1420,
     strictPort: true,
-    // Tauri v2 on macOS/Linux needs 127.0.0.1 to reach the dev server. If you
-    // ever expose the dev server to another device on the LAN, switch to
-    // "0.0.0.0" so the WebView can resolve it.
-    host: "127.0.0.1",
+    // Bind on localhost (NOT 127.0.0.1) so Tauri v2's WebView (origin
+    // http://tauri.localhost) treats the page as a secure context. With
+    // 127.0.0.1, WKWebView marks it as non-secure and `navigator.mediaDevices`
+    // becomes undefined — getUserMedia() throws.
+    host: "localhost",
   },
   envPrefix: ["VITE_", "TAURI_ENV_*"],
   build: {

@@ -37,6 +37,9 @@
       "icons/icon.ico"
     ],
     "resources": ["resources/wasm/*"],
+    "macOS": {
+      "entitlements": "./entitlements.plist"
+    },
     "windows": {
       "nsis": { "installMode": "perMachine" }
     }
