@@ -108,6 +108,22 @@ button { font-family: inherit; cursor: pointer; }
   color: white;
 }
 .btn--primary:disabled { opacity: .5; cursor: not-allowed; }
+.btn--ghost {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.btn--ghost:hover { color: var(--text); border-color: var(--muted); }
+
+.lobby__userrow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
 
 /* ---------------- Segmented ---------------- */
 .segmented {

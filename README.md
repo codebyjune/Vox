@@ -46,6 +46,16 @@ APP/
         └── src/denoise.rs
 ```
 
+## 账号 / 登录（30 天免登录）
+
+- 首次使用：注册账号（用户名 3–32 字符 `a-z 0-9 _ -`，密码 ≥ 6）。
+- 密码用 **bcrypt** 哈希存储，服务端永远不存明文。
+- 登录后发一个 **opaque 会话 token**（32 字节随机），存进 Tauri 的 plugin-store（浏览器开发用 localStorage）。
+- **会话有效期 30 天**：下次打开 App 自动用本地 token 调 `/api/me` 验证，通过则直接进大厅，无需再输账号；token 失效/登出后回到登录页。
+- 加入房间时 LiveKit identity 取自登录会话，**不能在请求里伪造身份**。
+
+后端相关端点：`POST /api/register`、`POST /api/login`、`GET /api/me`、`POST /api/logout`（`/api/join`、`/api/leave`、`/api/rooms` 现在都需要 Bearer token）。
+
 ## 降噪模式（全部支持开关，UI 一键切换）
 
 | 模式 | 实现 | 说明 |

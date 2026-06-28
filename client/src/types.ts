@@ -14,6 +14,19 @@ export interface JoinResponse {
   identity: string;
 }
 
+/** Account row as returned by the backend (no password). */
+export interface User {
+  id: number;
+  username: string;
+  createdAt: number;
+}
+
+/** Successful register/login response: a session token + the user. */
+export interface AuthResult {
+  token: string;
+  user: User;
+}
+
 export interface IceServer {
   urls: string[];
   username?: string;

@@ -10,9 +10,10 @@ interface Props {
   settings: DenoiseSettings;
   onSetting: (patch: Partial<DenoiseSettings>) => void;
   onStrength: (v: number) => void;
+  onSignOut: () => void;
 }
 
-export function RoomView({ roomName, voice, settings, onSetting, onStrength }: Props) {
+export function RoomView({ roomName, voice, settings, onSetting, onStrength, onSignOut }: Props) {
   const [showDenoise, setShowDenoise] = useState(false);
   const count = voice.participants.length;
 
@@ -73,6 +74,10 @@ export function RoomView({ roomName, voice, settings, onSetting, onStrength }: P
 
         <button className="ctrl ctrl--leave" onClick={() => void voice.leave()} title="Leave call">
           📵 <span>Leave</span>
+        </button>
+
+        <button className="ctrl" onClick={onSignOut} title="Sign out of your account">
+          ⏻ <span>Sign out</span>
         </button>
       </footer>
     </div>

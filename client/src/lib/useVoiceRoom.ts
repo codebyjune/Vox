@@ -227,7 +227,6 @@ export function useVoiceRoom(): VoiceRoom {
 
   const leave = useCallback(async () => {
     const room = roomRef.current;
-    const id = identity;
     remoteAudioRef.current.forEach((el) => {
       el.srcObject = null;
       el.remove();
@@ -239,7 +238,7 @@ export function useVoiceRoom(): VoiceRoom {
     if (room) {
       const roomName = room.name;
       await room.disconnect();
-      if (id) reportLeave(roomName, id);
+      reportLeave(roomName);
     }
     roomRef.current = null;
     setConnected(false);
@@ -247,7 +246,7 @@ export function useVoiceRoom(): VoiceRoom {
     setIdentity(null);
     setParticipants([]);
     setWorkletFallback(false);
-  }, [identity]);
+  }, []);
 
   useEffect(() => {
     return () => {
