@@ -1,4 +1,9 @@
 // Package api exposes the HTTP surface desktop clients talk to.
+//
+// The Go service now does one thing: sign LiveKit access tokens. LiveKit
+// Cloud (or a self-hosted LiveKit server you point LIVEKIT_HOST at) handles
+// TURN/STUN, ICE servers, and the SFU. The client picks up the TURN/ICE
+// configuration implicitly from the LiveKit server on connect.
 package api
 
 import (
@@ -8,35 +13,22 @@ import (
 	"strings"
 	"time"
 
-	lksdk "github.com/livekit/server-sdk-go/v2"
-	"github.com/livekit/protocol/livekit"
-
 	"github.com/voiceapp/server/internal/config"
-	"github.com/voiceapp/server/internal/db"
 	"github.com/voiceapp/server/internal/lkauth"
-	"github.com/voiceapp/server/internal/turn"
 )
 
 const (
 	tokenTTL    = 4 * time.Hour
-	turnTTL     = 12 * time.Hour
 	maxFieldLen = 64
 )
 
 type Server struct {
-	cfg     *config.Config
-	store   *db.Store
-	rooms   *lksdk.ServerServiceClient // may be nil if internal host unknown
-	logger  *slog.Logger
+	cfg    *config.Config
+	logger *slog.Logger
 }
 
-func New(cfg *config.Config, store *db.Store, logger *slog.Logger) *Server {
-	s := &Server{cfg: cfg, store: store, logger: logger}
-	if cfg.LiveKitInternalHost != "" {
-		s.rooms = lksdk.NewServerServiceClient(
-			cfg.LiveKitInternalHost, cfg.LiveKitKey, cfg.LiveKitSecret)
-	}
-	return s
+func New(cfg *config.Config, logger *slog.Logger) *Server {
+	return &Server{cfg: cfg, logger: logger}
 }
 
 // Router builds the mux with CORS + JSON logging middleware applied.
@@ -45,7 +37,6 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/join", s.handleJoin)
 	mux.HandleFunc("/api/leave", s.handleLeave)
-	mux.HandleFunc("/api/rooms", s.handleRooms)
 	return s.withCORS(s.log(mux))
 }
 
@@ -62,11 +53,11 @@ type joinRequest struct {
 }
 
 type joinResponse struct {
-	Token        string         `json:"token"`
-	LiveKitHost  string         `json:"livekitHost"`
-	ICEServers   []turn.ICEServer `json:"iceServers"`
-	Room         string         `json:"room"`
-	Identity     string         `json:"identity"`
+	Token       string `json:"token"`
+	LiveKitHost string `json:"livekitHost"`
+	Room        string `json:"room"`
+	Identity    string `json:"identity"`
+	Name        string `json:"name"`
 }
 
 func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
@@ -104,31 +95,17 @@ func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ice, err := turn.Mint(
-		turn.ICEConfig{Domain: s.cfg.TurnDomain, Port: s.cfg.TurnListenPort},
-		s.cfg.TurnStaticSecret, identity, turnTTL)
-	if err != nil {
-		s.logger.Error("mint turn creds", "err", err)
-		// TURN is optional; keep STUN-less path working.
-		ice = nil
-	}
-
-	if err := s.store.TouchRoom(room, room); err != nil {
-		s.logger.Warn("touch room", "err", err)
-	}
-	if _, err := s.store.RecordJoin(room, identity); err != nil {
-		s.logger.Warn("record join", "err", err)
-	}
-
 	writeJSON(w, http.StatusOK, joinResponse{
 		Token:       tok,
 		LiveKitHost: s.cfg.LiveKitHost,
-		ICEServers:  ice,
 		Room:        room,
 		Identity:    identity,
+		Name:        name,
 	})
 }
 
+// leave is a fire-and-forget endpoint. With no DB, it only logs the event
+// for observability — kept so the client wiring stays unchanged.
 type leaveRequest struct {
 	Room     string `json:"room"`
 	Identity string `json:"identity"`
@@ -144,42 +121,8 @@ func (s *Server) handleLeave(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	if err := s.store.RecordLeave(sanitize(req.Room), sanitize(req.Identity)); err != nil {
-		s.logger.Warn("record leave", "err", err)
-	}
+	s.logger.Info("leave", "room", sanitize(req.Room), "identity", sanitize(req.Identity))
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
-}
-
-type roomInfo struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Participants  uint32 `json:"participants"`
-	Active        bool   `json:"active"`
-	CreatedAt     int64  `json:"createdAt"`
-}
-
-func (s *Server) handleRooms(w http.ResponseWriter, r *http.Request) {
-	if s.rooms == nil {
-		writeJSON(w, http.StatusOK, []roomInfo{})
-		return
-	}
-	res, err := s.rooms.ListRooms(r.Context(), &livekit.ListRoomsRequest{})
-	if err != nil {
-		s.logger.Warn("list rooms", "err", err)
-		writeJSON(w, http.StatusOK, []roomInfo{})
-		return
-	}
-	out := make([]roomInfo, 0, len(res.Rooms))
-	for _, rm := range res.Rooms {
-		out = append(out, roomInfo{
-			ID:           rm.Sid,
-			Name:         rm.Name,
-			Participants: rm.NumParticipants,
-			Active:       rm.NumParticipants > 0,
-			CreatedAt:    rm.CreationTime,
-		})
-	}
-	writeJSON(w, http.StatusOK, out)
 }
 
 // ---------- helpers ----------
@@ -194,14 +137,14 @@ func (s *Server) log(h http.Handler) http.Handler {
 }
 
 func (s *Server) withCORS(h http.Handler) http.Handler {
-	allowAll := len(s.cfg.CORSOrigins) == 0
+	allowAll := len(s.cfg.CORSOrigins) == 0 || (len(s.cfg.CORSOrigins) == 1 && s.cfg.CORSOrigins[0] == "*")
 	allowed := make(map[string]bool, len(s.cfg.CORSOrigins))
 	for _, o := range s.cfg.CORSOrigins {
 		allowed[o] = true
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		if allowAll || allowed["*"] || allowed[origin] {
+		if allowAll || allowed[origin] {
 			w.Header().Set("Access-Control-Allow-Origin", originOrStar(origin))
 			w.Header().Set("Vary", "Origin")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
@@ -239,7 +182,6 @@ func writeErr(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]any{"error": msg})
 }
 
-// sanitize keeps room/identity to a safe, predictable charset.
 func sanitize(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	var b strings.Builder
