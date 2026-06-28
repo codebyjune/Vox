@@ -8,12 +8,14 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/voiceapp/server/internal/config"
+	"github.com/voiceapp/server/internal/db"
 	"github.com/voiceapp/server/internal/lkauth"
 )
 
@@ -24,11 +26,12 @@ const (
 
 type Server struct {
 	cfg    *config.Config
+	store  *db.Store
 	logger *slog.Logger
 }
 
-func New(cfg *config.Config, logger *slog.Logger) *Server {
-	return &Server{cfg: cfg, logger: logger}
+func New(cfg *config.Config, store *db.Store, logger *slog.Logger) *Server {
+	return &Server{cfg: cfg, store: store, logger: logger}
 }
 
 // Router builds the mux with CORS + JSON logging middleware applied.
@@ -37,6 +40,7 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/join", s.handleJoin)
 	mux.HandleFunc("/api/leave", s.handleLeave)
+	mux.HandleFunc("/api/rooms", s.handleRooms)
 	return s.withCORS(s.log(mux))
 }
 
@@ -62,9 +66,11 @@ type joinResponse struct {
 
 func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	// Cap request body so a buggy / hostile client can't OOM us.
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<16) // 64 KiB
 	var req joinRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
@@ -95,6 +101,16 @@ func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Persist (best-effort; DB outages must not block joining a call).
+	if s.store != nil {
+		if err := s.store.TouchRoom(room, room); err != nil {
+			s.logger.Warn("touch room", "err", err)
+		}
+		if err := s.store.RecordJoin(room, identity); err != nil {
+			s.logger.Warn("record join", "err", err)
+		}
+	}
+
 	writeJSON(w, http.StatusOK, joinResponse{
 		Token:       tok,
 		LiveKitHost: s.cfg.LiveKitHost,
@@ -104,8 +120,7 @@ func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// leave is a fire-and-forget endpoint. With no DB, it only logs the event
-// for observability — kept so the client wiring stays unchanged.
+// leave is a fire-and-forget endpoint used for history and observability.
 type leaveRequest struct {
 	Room     string `json:"room"`
 	Identity string `json:"identity"`
@@ -113,16 +128,53 @@ type leaveRequest struct {
 
 func (s *Server) handleLeave(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<16)
 	var req leaveRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	s.logger.Info("leave", "room", sanitize(req.Room), "identity", sanitize(req.Identity))
+	room := sanitize(req.Room)
+	identity := sanitize(req.Identity)
+	if room == "" || identity == "" {
+		writeErr(w, http.StatusBadRequest, "room and identity are required")
+		return
+	}
+	if s.store != nil {
+		if err := s.store.RecordLeave(room, identity); err != nil {
+			s.logger.Warn("record leave", "err", err)
+		}
+	}
+	s.logger.Info("leave", "room", room, "identity", identity)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleRooms returns the most recently active rooms (for a small dashboard).
+func (s *Server) handleRooms(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.store == nil {
+		writeJSON(w, http.StatusOK, []any{})
+		return
+	}
+	limit := 100
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := atoi(l); err == nil {
+			limit = n
+		}
+	}
+	rows, err := s.store.ListRooms(limit)
+	if err != nil {
+		s.logger.Warn("list rooms", "err", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "list failed"})
+		return
+	}
+	writeJSON(w, http.StatusOK, rows)
 }
 
 // ---------- helpers ----------
@@ -205,4 +257,18 @@ func trimLen(s string, n int) string {
 		s = s[:n]
 	}
 	return s
+}
+
+func atoi(s string) (int, error) {
+	n := 0
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return 0, fmt.Errorf("not a number: %q", s)
+		}
+		n = n*10 + int(r-'0')
+		if n > 1<<20 {
+			return 0, fmt.Errorf("number too large: %q", s)
+		}
+	}
+	return n, nil
 }

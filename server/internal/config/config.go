@@ -14,6 +14,7 @@ type Config struct {
 	LiveKitHost   string // public wss:// URL clients use to reach the SFU (LiveKit Cloud or self-hosted)
 
 	HTTPAddr    string
+	DBPath      string // SQLite file path; empty disables persistence
 	CORSOrigins []string
 }
 
@@ -24,6 +25,7 @@ func Load() (*Config, error) {
 		LiveKitSecret: os.Getenv("LIVEKIT_API_SECRET"),
 		LiveKitHost: os.Getenv("LIVEKIT_HOST"),
 		HTTPAddr:    getenv("GO_HTTP_ADDR", ":8080"),
+		DBPath:      getenv("DB_PATH", "./vox.db"),
 		CORSOrigins: parseList(getenv("CORS_ORIGINS", "*")),
 	}
 

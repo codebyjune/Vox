@@ -22,6 +22,7 @@ import (
 
 	"github.com/voiceapp/server/internal/api"
 	"github.com/voiceapp/server/internal/config"
+	"github.com/voiceapp/server/internal/db"
 )
 
 func main() {
@@ -35,13 +36,21 @@ func main() {
 		os.Exit(1)
 	}
 
+	store, err := db.New(cfg.DBPath)
+	if err != nil {
+		logger.Error("db", "path", cfg.DBPath, "err", err)
+		os.Exit(1)
+	}
+	defer store.Close()
+	logger.Info("db opened", "path", cfg.DBPath)
+
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           api.New(cfg, logger).Router(),
+		Handler:           api.New(cfg, store, logger).Router(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
-		IdleTimeout:       60 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	stop := make(chan os.Signal, 1)

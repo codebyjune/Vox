@@ -2,19 +2,21 @@
 
 3–5 人小队语音，低延迟、强降噪，桌面端打包成 Windows `.exe`。
 
-> **架构简化**：Go 后端只做一件事——**签 LiveKit JWT**。
+> **架构**：Go 后端**签 LiveKit JWT + 持久化房间历史到 SQLite**。
 > SFU / TURN / STUN / ICE servers 全部由 **LiveKit Cloud**（或你自托管的 LiveKit server）提供。
-> 没有 Docker、没有 coturn、没有 SQLite，单进程 Go 二进制 + 单文件安装包就够了。
+> 没有 Docker、没有 coturn，单进程 Go 二进制 + 单文件 SQLite + 单文件桌面安装包就够了。
 
 ```
 ┌─────────────────────┐      ws/wss       ┌──────────────────────┐
 │  Tauri 桌面客户端    │  ◀──────────────▶ │  LiveKit (Cloud/自托) │
 │  React/TS + Rust     │   WebRTC(Opus)    │  SFU + STUN + TURN   │
 │  + AI 降噪           │                   └─────────┬────────────┘
-│  - AudioWorklet      │   HTTP (token only)          │
+│  - AudioWorklet      │   HTTP (token+history)      │
 │  - DeepFilter/DTLN   │  ◀──────────────▶ ┌──────────▼──────────┐
 │    (Rust→WASM 可选)  │                   │  Go 后端（单进程）    │
-└─────────────────────┘                   │  仅签 LiveKit JWT    │
+└─────────────────────┘                   │  - 签 LiveKit JWT     │
+                                           │  - SQLite (vox.db)    │
+                                           │    rooms / 参与者历史  │
                                            │  $ go run ./cmd/voiceapp│
                                            └─────────────────────┘
 ```
@@ -24,13 +26,14 @@
 ```
 APP/
 ├── README.md
-├── .env.example                    # LiveKit 凭据 + 端口
-├── server/                         # Go 后端（仅签 token）
+├── .env.example                    # LiveKit 凭据 + 端口 + DB path
+├── server/                         # Go 后端
 │   ├── go.mod
 │   ├── cmd/voiceapp/main.go        # 入口
 │   └── internal/
-│       ├── api/                    # HTTP: /join /leave /health + CORS
+│       ├── api/                    # HTTP: /join /leave /rooms /health + CORS
 │       ├── config/                 # 环境变量
+│       ├── db/                     # SQLite (modernc.org/sqlite, 无 CGO)
 │       └── lkauth/                 # LiveKit JWT 签发
 └── client/                         # Tauri v2 桌面端
     ├── src/                        # React/TS UI + 降噪管线
@@ -74,12 +77,18 @@ go run ./server/cmd/voiceapp
 # 验证：
 curl http://localhost:8080/api/health
 # {"ok":true,"ts":...}
+
+# 看看最近的活动房间（来自 vox.db）：
+curl http://localhost:8080/api/rooms?limit=20
 ```
 
 或 build 单文件：
 ```bash
 go build -o voiceapp ./server/cmd/voiceapp && ./voiceapp
 ```
+
+> SQLite 文件默认 `./vox.db`，可通过 `DB_PATH` 改。第一次启动会自动建表（rooms、participants）。
+> `vox.db` / `vox.db-wal` / `vox.db-shm` 在 `.gitignore` 里，不会进仓库。
 
 ## 三、运行桌面客户端
 

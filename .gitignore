@@ -23,6 +23,8 @@ server/vendor/
 .env
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
 data/
 
 # IDE
