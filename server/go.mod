@@ -1,6 +1,6 @@
 module github.com/voiceapp/server
 
-go 1.23.0
+go 1.26.0
 
 require (
 	github.com/livekit/protocol v1.27.0
