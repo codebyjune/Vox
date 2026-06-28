@@ -1,0 +1,24 @@
+# Local dev: runs ONLY the LiveKit SFU so the Go backend + desktop client can
+# talk to a real media server without deploying to LiveKit Cloud.
+#
+#   cd deploy/local
+#   docker compose up -d
+#   docker compose logs livekit          # confirm "devkey" / "secret"
+#
+# Then start the Go backend with:
+#   LIVEKIT_API_KEY=devkey LIVEKIT_API_SECRET=secret \
+#   LIVEKIT_HOST=ws://localhost:7880 go run ./server/cmd/voiceapp
+#
+# Dev creds (from livekit-dev.yaml): key=devkey, secret=secret.
+
+services:
+  livekit:
+    image: livekit/livekit-server:v1.13.2
+    command: --config /etc/livekit.yaml --udp-port 50000-50020
+    restart: unless-stopped
+    ports:
+      - "7880:7880"                       # signaling (ws)
+      - "7881:7881"                       # ICE/TCP fallback
+      - "50000-50100:50000-50100/udp"     # WebRTC media
+    volumes:
+      - ./livekit-dev.yaml:/etc/livekit.yaml:ro

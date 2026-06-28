@@ -1,0 +1,25 @@
+# LiveKit dev config — deterministic key/secret so the Go backend can match.
+# Used ONLY by deploy/local/docker-compose.yml for local end-to-end testing.
+port: 7880
+bind_addresses:
+  - "0.0.0.0"
+
+log_level: info
+
+rtc:
+  tcp_port: 7881
+  # UDP port range is set via the --udp-port CLI flag in docker-compose.yml
+  # (field name changed across LiveKit versions; the flag is stable).
+  # Local-only: don't advertise an external/public IP.
+  use_external_ip: false
+
+keys:
+  devkey: devsecret-change-me-32-bytes-min-abcdef
+
+room:
+  auto_create: true
+  empty_timeout: 60
+  max_participants: 8
+
+turn:
+  enabled: false
