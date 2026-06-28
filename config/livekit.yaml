@@ -1,0 +1,41 @@
+# LiveKit Server configuration.
+# The API key/secret MUST match LIVEKIT_API_KEY / LIVEKIT_API_SECRET in .env
+# because the Go service signs join tokens with those same values.
+#
+# IMPORTANT: this file is shipped with PLACEHOLDER keys only. The docker-compose
+# entrypoint validates at boot that LIVEKIT_API_KEY/SECRET are not the default
+# placeholders — refuse to start if they are. Always set real secrets via the
+# environment, not by editing this file.
+port: 7880
+bind_addresses:
+  - "0.0.0.0"
+
+log_level: info
+
+# WebRTC / SFU media transport
+rtc:
+  tcp_port: 7881
+  port_range:
+    start: 50000
+    end: 60000
+  use_external_ip: true          # advertise public IP for NAT traversal
+
+# TURN is served by coturn (separate container). The Go service hands clients
+# short-lived TURN credentials directly, so LiveKit's own TURN block is off.
+turn:
+  enabled: false
+
+# Room behavior tuned for small (3-5 person) calls.
+room:
+  auto_create: true              # first participant creates the room
+  empty_timeout: 300            # close 5 min after everyone leaves
+  max_participants: 8           # hard ceiling above the 5-person target
+
+# Secrets come from the runtime environment (LIVEKIT_API_KEY /
+# LIVEKIT_API_SECRET) and are NOT hard-coded here. They are injected via
+# --key / --secret CLI flags in docker-compose, so this YAML intentionally has
+# no keys block. The Go service signs join tokens with the same env vars.
+
+# Optionally expose Prometheus metrics on :7882
+prometheus:
+  port: 7882

@@ -1,0 +1,34 @@
+# deps / build artifacts
+node_modules/
+dist/
+target/
+*.exe
+*.dll
+*.pdb
+
+# tauri
+client/src-tauri/target/
+client/src-tauri/gen/schemas/
+client/vite.config.js
+client/vite.config.d.ts
+
+# typescript build artifacts
+*.tsbuildinfo
+
+# go
+server/bin/
+server/vendor/
+
+# env / local data
+.env
+*.db
+*.db-journal
+data/
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+
+# wasm models (drop in manually)
+client/public/wasm/*.wasm

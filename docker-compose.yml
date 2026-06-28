@@ -1,0 +1,82 @@
+# ============================================================
+# VoiceApp — LiveKit (SFU) + coturn (TURN/STUN) + Go backend
+# One-command launch:  docker compose up -d --build
+# ============================================================
+services:
+  livekit:
+    image: livekit/livekit-server:v1.8.3
+    # Keys come from CLI flags so secrets stay in env vars only. The YAML is
+    # config-only (no keys block). A trailing blank in the config map is
+    # accepted by LiveKit server.
+    command: >
+      --config /etc/livekit.yaml
+      --node-id=node_1
+      --key ${LIVEKIT_API_KEY}
+      --secret ${LIVEKIT_API_SECRET}
+    environment:
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
+    restart: unless-stopped
+    ports:
+      - "7880:7880"        # signaling (ws/wss)
+      - "7881:7881"        # ICE/TCP fallback
+      - "7882:7882"        # prometheus metrics (optional)
+      - "50000-60000:50000-60000/udp"  # WebRTC media (SFU)
+    volumes:
+      - ./config/livekit.yaml:/etc/livekit.yaml:ro
+    depends_on:
+      - turn
+    networks:
+      - voiceapp
+
+  turn:
+    image: coturn/coturn:4.6.2
+    restart: unless-stopped
+    # use-auth-secret lets the Go service mint short-lived TURN creds.
+    # TLS is opt-in via env vars (set TURN_CERT / TURN_PKEY to mount & pass).
+    command: >
+      -c /etc/turnserver.conf
+      --use-auth-secret
+      --static-auth-secret=${TURN_STATIC_SECRET}
+      --realm=${TURN_DOMAIN}
+      --total-quota=100
+      --bps-capacity=0
+      --fingerprint
+    ports:
+      - "3478:3478/udp"        # STUN/TURN UDP
+      - "3478:3478/tcp"        # STUN/TURN TCP fallback
+      - "5349:5349/tcp"        # TURN/TLS (only used if cert is provisioned)
+      - "49152-49200:49152-49200/udp"  # relay ports
+    volumes:
+      - ./config/turnserver.conf:/etc/turnserver.conf:ro
+    networks:
+      - voiceapp
+
+  app:
+    build: ./server
+    restart: unless-stopped
+    environment:
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
+      LIVEKIT_HOST: ${LIVEKIT_HOST}
+      TURN_DOMAIN: ${TURN_DOMAIN}
+      TURN_STATIC_SECRET: ${TURN_STATIC_SECRET}
+      TURN_LISTEN_PORT: ${TURN_LISTEN_PORT}
+      GO_HTTP_ADDR: ${GO_HTTP_ADDR}
+      DB_PATH: ${DB_PATH}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+    ports:
+      - "8080:8080"            # Go HTTP API
+    volumes:
+      - appdata:/var/lib/voiceapp
+    depends_on:
+      - livekit
+    networks:
+      - voiceapp
+
+networks:
+  voiceapp:
+    driver: bridge
+
+volumes:
+  appdata:
