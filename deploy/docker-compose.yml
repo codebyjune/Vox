@@ -1,6 +1,6 @@
 services:
   livekit:
-    image: livekit/livekit-server:v1.13.2
+    image: ghcr.io/livekit/livekit-server:latest
     command: --config /etc/livekit.yaml --node-ip ${SERVER_IP}
     restart: unless-stopped
     ports:
@@ -20,7 +20,7 @@ services:
     environment:
       # Must match the keys line in livekit-prod.yaml
       - LIVEKIT_API_KEY=prodkey
-      - LIVEKIT_API_SECRET=prodsecret-change-me-to-a-random-string-64-chars-min
+      - LIVEKIT_API_SECRET=e9edcad3d9d33d6dc7dac274e5147b7dfa47243e8e80625d4203cb611f6756be
       - LIVEKIT_HOST=ws://${SERVER_IP}:7880
       - GO_HTTP_ADDR=:8080
       - DB_PATH=/data/vox.db
